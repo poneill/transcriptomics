@@ -1,5 +1,5 @@
 library(lattice)
-mle <- function(xs,epsilon=.00001,delta=.00001,m1=1,m2=1){
+mle <- function(xs,epsilon=.00001,delta=.00001,m1=1,m2=1,verbose=FALSE){
   c1 <- mean(log(1+exp(xs)))
   c2 <- mean(log(1+exp(-xs)))
   lhs1 <- function(x,y)-(digamma(y) - digamma(x + y))
@@ -8,19 +8,34 @@ mle <- function(xs,epsilon=.00001,delta=.00001,m1=1,m2=1){
   err2 <- function(x,y) (lhs2(x,y) - c2)^2
   err <- function(x,y) err1(x,y) + err2(x,y)
   gen <- 0
-  while(err(m1,m2) > epsilon){
+  old.err <- 0
+  new.err <- err(m1,m2)
+  while(err(m1,m2) > epsilon && (old.err != new.err)){
     deltas <- lapply(list(c(1,1),c(1,-1),c(-1,1),c(-1,-1)),
                      function(x) x * delta + c(m1,m2))
     winner <- deltas[which.min(lapply(deltas,
                                       function(pair)err(pair[1],pair[2])))][[1]]
     m1 <- winner[1]
     m2 <- winner[2]
-    if(gen %% 1000 == 0) print(paste(m1,m2,err(m1,m2),gen))
+    old.err <- new.err
+    new.err <- err(m1,m2)
+    if(verbose && gen %% 1000 == 0)
+      print(paste(m1,m2,old.err,new.err,gen))
     gen <- gen + 1
   }
   c(m1,m2)
 }
 
+meta.mle <- function(xs,epsilon=1,delta=1,m1=1,m2=2,factor=2){
+  while(epsilon>0){
+    ms <- mle(xs,epsilon,delta,m1,m2)
+    print(ms)
+    m1 <- ms[1]
+    m2 <- ms[2]
+    epsilon <- epsilon/factor
+    delta <- delta/factor
+  }
+}
 make.chain <- function(n,x,dtarget,rproposal,dproposal){
   chain <- array(x)
   while(length(chain) < n){
