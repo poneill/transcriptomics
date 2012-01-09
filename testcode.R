@@ -1,7 +1,9 @@
 library(lattice)
-mle <- function(c1,c2,epsilon=.00001,delta=.00001,m1=1,m2=1){
-  lhs1 <- function(x,y){digamma(x) - digamma(x + y)}
-  lhs2 <- function(x,y){digamma(y) - digamma(x + y)}
+mle <- function(xs,epsilon=.00001,delta=.00001,m1=1,m2=1){
+  c1 <- mean(log(1+exp(xs)))
+  c2 <- mean(log(1+exp(-xs)))
+  lhs1 <- function(x,y)-(digamma(y) - digamma(x + y))
+  lhs2 <- function(x,y)-(digamma(x) - digamma(x + y))
   err1 <- function(x,y) (lhs1(x,y) - c1)^2
   err2 <- function(x,y) (lhs2(x,y) - c2)^2
   err <- function(x,y) err1(x,y) + err2(x,y)
