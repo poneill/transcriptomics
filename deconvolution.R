@@ -36,13 +36,35 @@ cumulant <- function(a,b,r){
   factorial(r-1)*(1/(a^r) + (-1)^r * 1/(b^r))
 }
 
+R <- function(z)(1-pnorm(z))/dnorm(z)
+
 dnormlap <- function(y,mu,sigma.squared,alpha,beta){
   "density function for normal-laplace"
-  R <- function(z)(1-pnorm(z))/dnorm(z)
   sigma <- sqrt(sigma.squared)
   alpha*beta/(alpha+beta)*dnorm((y-mu)/sigma)*(R(alpha*sigma-(y-mu)/sigma)+
                                                R(beta*sigma+(y-mu)/sigma))
 }
+
+log.l <- function(xs,mu,sigma.squared,alpha,beta){
+  sum(log(dnormlap(xs,mu,sigma.squared,alpha,beta)))
+}
+
+foo <- function(y,mu,sigma.squared,alpha,beta){
+  sigma <- sqrt(sigma.squared)
+  alpha*beta/(alpha+beta)*dnorm((y-mu)/sigma)
+}
+
+bar <- function(y,mu,sigma.squared,alpha,beta){
+  sigma <- sqrt(sigma.squared)
+  R(alpha*sigma-(y-mu)/sigma)
+}
+
+baz <- function(y,mu,sigma.squared,alpha,beta){
+  sigma <- sqrt(sigma.squared)
+  R(beta*sigma+(y-mu)/sigma)
+nn}
+
+dnormlap.prime <- function(y,mu,sigma.squared,alpha,beta) foo(y,mu,sigma.squared,alpha,beta)*(bar(y,mu,sigma.squared,alpha,beta) + baz(y,mu,sigma.squared,alpha,beta))
 
 m <- 3
 as <- prob.vector(3)
@@ -94,8 +116,8 @@ eq2 <- function(a,b,k4){
 }
 
 
-grad.descent <- function(a,b,k3,k4,epsilon=.00001,delta=.00001){
-  "Perform a primitive psuedo-gradient descent optimization to solve the systemx eq1, eq2 for a and b, given k3,k4"
+grad.descent <- function(a,b,k1,k2,k3,k4,epsilon=.00001,delta=.00001){
+  "Perform a primitive psuedo-gradient descent optimization to solve the system eq1, eq2 for a and b, given k3,k4"
   print("entering")
   err <- function(a,b){eq1(a,b,k3)^2 + eq2(a,b,k4)^2}
   gen <- 0
@@ -106,13 +128,16 @@ grad.descent <- function(a,b,k3,k4,epsilon=.00001,delta=.00001){
                                       function(pair)err(pair[1],pair[2])))][[1]]
     a <- winner[1]
     b <- winner[2]
-    if(gen %% 1000 == 0) print(paste(a,b,err(a,b),gen))
+    if(gen %% 1000 == 0){
+        mu <- k1 - 1/a + 1/b
+        sigma.squared <- k2 - (1/a^2 + 1/b^2)
+      print(paste(mu,sigma.squared,a,b,err(a,b)))}
     gen <- gen + 1
   }
   c(a,b)
 }
 
-mme.estimate.nl <- function(xs){
+mme.estimate.nl <- function(xs,epsilon=.00001,delta=.00001){
   "Given a sample xs from an NL distribution, estimate its parameters via method of moments, described in section 3.1 of Wu 2005"
   ms <- moments(xs)
   ks <- cumulants(ms)
@@ -120,7 +145,7 @@ mme.estimate.nl <- function(xs){
   k2 <- ks[2]
   k3 <- ks[3]
   k4 <- ks[4]
-  ab <- grad.descent(1,1,k3,k4)
+  ab <- grad.descent(1,1,k1,k2,k3,k4,epsilon,delta)
   a <- ab[1]
   b <- ab[2]  
   mu <- k1 - 1/a + 1/b
@@ -143,4 +168,40 @@ evaluate.grouping <- function(xs,params.list,js){
                                           params.list[[i]][2],
                                           params.list[[i]][3],
                                           params.list[[i]][4]))))
+}
+
+em <- function(ys){
+  "Do E-M for parameter estimation of ys~NL(nu,tau,alpha,beta). Cf. Reed 2004, section 4.3"
+  n <- length(ys)
+  ws <- rexp(n)
+  zs <- rnorm(n)
+  alpha <- beta <- rnorm(1)
+  mu <- mean(ys)
+  sigma <- sqrt(var(ys))
+  logl <- logl.old <- -Inf
+  do <- TRUE
+  while (do || (logl > logl.old)) {
+    do <- FALSE
+                                        #E step
+    qs <- beta*sigma + (ys - mu)/sigma
+    ps <- alpha*sigma - (ys - mu)/sigma
+    denom <- (R(qs) + R(ps))
+    ws <- sigma*(qs*R(qs) - ps*R(ps))/denom
+    wvs <- sigma*(1-ps*R(ps))/denom
+    w.2s <- sigma^2*((1+qs^2)*R(qs) + (1+ps^2)*R(ps) - sigma*(alpha+beta))/denom
+    
+    zs <- ys - ws
+    zs.2 <- ys^2 - 2 * ys * ws + w.2s
+                                        #M step
+    mu <- mean(zs)
+    sigma <- sqrt(mean(zs.2) - mean(zs)^2)
+    A <- mean(wvs)
+    B <- A - mean(ws)
+    alpha <- 1/(A + sqrt(A*B))
+    beta <- 1/(B + sqrt(A*B))
+    logl.old <- logl
+    logl <- log.l(ys,mu,sigma^2,alpha,beta)
+    print(paste(mu,sigma^2,alpha,beta,logl))
+  }
+  c(mu,sigma^2,alpha,beta)
 }
