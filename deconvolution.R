@@ -49,6 +49,16 @@ log.l <- function(xs,mu,sigma.squared,alpha,beta){
   sum(log(dnormlap(xs,mu,sigma.squared,alpha,beta)))
 }
 
+log.l.mixture <- function(xs,mus,sigmas.squared,alphas,beta,pis){
+  print(pis)
+  f <- function(x) sum(sapply(1:length(pis),function(i) pis[i] * dnormlap(x,mus[i],
+                                                         sigmas.squared[i],
+                                                         alphas[i],
+                                                         betas[i])))
+  print(sum(log(f(xs))))
+  sum(log(f(xs)))
+}
+
 foo <- function(y,mu,sigma.squared,alpha,beta){
   sigma <- sqrt(sigma.squared)
   alpha*beta/(alpha+beta)*dnorm((y-mu)/sigma)
@@ -170,38 +180,57 @@ evaluate.grouping <- function(xs,params.list,js){
                                           params.list[[i]][4]))))
 }
 
-em <- function(ys){
+em <- function(ys,num.comps=2){
   "Do E-M for parameter estimation of ys~NL(nu,tau,alpha,beta). Cf. Reed 2004, section 4.3"
   n <- length(ys)
   ws <- rexp(n)
   zs <- rnorm(n)
-  alpha <- beta <- rnorm(1)
-  mu <- mean(ys)
-  sigma <- sqrt(var(ys))
+  alphas <- rnorm(num.comps)
+  betas <- rnorm(num.comps)
+  mus <- replicate(num.comps,mean(ys))
+  sigmas <- replicate(num.comps,sqrt(var(ys)))
   logl <- logl.old <- -Inf
   do <- TRUE
+  taus <- t(replicate(num.comps,prob.vector(n))) #randomize intial responsibilities
+  pis <- prob.vector(num.comps)
+  qs <- ps <- denoms <- ws <- wvs <- w.2s <- zs <- zs.2 <- mat.or.vec(num.comps,n)
   while (do || (logl > logl.old)) {
+    print("whiling")
     do <- FALSE
                                         #E step
-    qs <- beta*sigma + (ys - mu)/sigma
-    ps <- alpha*sigma - (ys - mu)/sigma
-    denom <- (R(qs) + R(ps))
-    ws <- sigma*(qs*R(qs) - ps*R(ps))/denom
-    wvs <- sigma*(1-ps*R(ps))/denom
-    w.2s <- sigma^2*((1+qs^2)*R(qs) + (1+ps^2)*R(ps) - sigma*(alpha+beta))/denom
+    print("eing")
+    for(i in 1:num.comps){
+    qs[i,] <- betas[i]*sigmas[i] + (ys - mus[i])/sigmas[i]
+    ps[i,] <- alphas[i]*sigmas[i] - (ys - mus[i])/sigmas[i]
+    denoms[i,] <- (R(qs[i,]) + R(ps[i,]))
+    ws[i,] <- sigmas[i]*(qs[i,]*R(qs[i,]) - ps[i,]*R(ps[i,]))/denoms[i,]
+    wvs[i,] <- sigmas[i]*(1-ps[i,]*R(ps[i,]))/denoms[i,]
+    w.2s[i,] <- sigmas[i]^2*((1+qs[i,]^2)*R(qs[i,]) + (1+ps[i,]^2)*R(ps[i,]) - sigmas[i]*(alphas[i]+betas[i]))/denoms[i,]
     
-    zs <- ys - ws
-    zs.2 <- ys^2 - 2 * ys * ws + w.2s
-                                        #M step
-    mu <- mean(zs)
-    sigma <- sqrt(mean(zs.2) - mean(zs)^2)
-    A <- mean(wvs)
-    B <- A - mean(ws)
-    alpha <- 1/(A + sqrt(A*B))
-    beta <- 1/(B + sqrt(A*B))
-    logl.old <- logl
-    logl <- log.l(ys,mu,sigma^2,alpha,beta)
-    print(paste(mu,sigma^2,alpha,beta,logl))
+    zs[i,] <- ys - ws[i,]
+    zs.2[i,] <- ys^2 - 2 * ys * ws[i,] + w.2s[i,]
   }
-  c(mu,sigma^2,alpha,beta)
+                                        #M step
+    print("ming")
+    fs <- sapply(1:num.comps,function(i) function(x)pis[i] * dnormlap(x,mus[i],sigmas[i]^2,alphas[i],betas[i]))
+    f <- function(x) sum(sapply(1:num.comps,function(i) dnormlap(x,mus[i],sigmas[i]^2,alphas[i],betas[i])))
+    print("about to for")
+    for(i in 1:num.comps){
+      taus[i,] <- sapply(ys,function(y)fs[[i]](y)/f(y))
+      print("mu")
+      mus[i] <- mean(zs[i,])
+      print("sigma")
+      sigmas[i] <- sqrt(mean(zs.2[i,]) - mean(zs[i,])^2)
+      print("about to A")
+      A <- mean(wvs[i,])
+      B <- A - mean(ws[i,])
+      alphas[i] <- 1/(A + sqrt(A*B))
+      beta[i] <- 1/(B + sqrt(A*B))
+    }
+    print("computing log likelihood")
+    logl.old <- logl
+    logl <- log.l.mixture(ys,mus,sigmas^2,alphas,betas,pis)
+    print(logl)
+  }
+  c(mus,sigmas^2,alphas,betas,pis)
 }
