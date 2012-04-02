@@ -190,10 +190,10 @@ em <- function(ys,num.comps=2){
   mus <- replicate(num.comps,mean(ys))
   sigmas <- replicate(num.comps,sqrt(var(ys)))
   logl <- logl.old <- -Inf
-  do <- TRUE
   taus <- t(replicate(num.comps,prob.vector(n))) #randomize intial responsibilities
   pis <- prob.vector(num.comps)
   qs <- ps <- denoms <- ws <- wvs <- w.2s <- zs <- zs.2 <- mat.or.vec(num.comps,n)
+  do <- TRUE
   while (do || (logl > logl.old)) {
     print("whiling")
     do <- FALSE
