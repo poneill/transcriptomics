@@ -49,7 +49,7 @@ log.l <- function(xs,mu,sigma.squared,alpha,beta){
   sum(log(dnormlap(xs,mu,sigma.squared,alpha,beta)))
 }
 
-log.l.mixture <- function(xs,mus,sigmas.squared,alphas,beta,pis){
+log.l.mixture <- function(xs,mus,sigmas.squared,alphas,betas,pis){
   print(pis)
   f <- function(x) sum(sapply(1:length(pis),function(i) pis[i] * dnormlap(x,mus[i],
                                                          sigmas.squared[i],
@@ -200,8 +200,8 @@ em <- function(ys,num.comps=2){
                                         #E step
     print("eing")
     for(i in 1:num.comps){
-    qs[i,] <- betas[i]*sigmas[i] + (ys - mus[i])/sigmas[i]
-    ps[i,] <- alphas[i]*sigmas[i] - (ys - mus[i])/sigmas[i]
+    qs[i,] <- betas[i]*sigmas[i] + (ys*taus[i,]/sum(taus[i,]) - mus[i])/sigmas[i]
+    ps[i,] <- alphas[i]*sigmas[i] - (ys*taus[i,]/sum(taus[i,]) - mus[i])/sigmas[i]
     denoms[i,] <- (R(qs[i,]) + R(ps[i,]))
     ws[i,] <- sigmas[i]*(qs[i,]*R(qs[i,]) - ps[i,]*R(ps[i,]))/denoms[i,]
     wvs[i,] <- sigmas[i]*(1-ps[i,]*R(ps[i,]))/denoms[i,]
