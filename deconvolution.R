@@ -225,7 +225,7 @@ em <- function(ys,num.comps=2){
       A <- mean(wvs[i,])
       B <- A - mean(ws[i,])
       alphas[i] <- 1/(A + sqrt(A*B))
-      beta[i] <- 1/(B + sqrt(A*B))
+      betas[i] <- 1/(B + sqrt(A*B))
     }
     print("computing log likelihood")
     logl.old <- logl
