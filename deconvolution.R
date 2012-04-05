@@ -103,9 +103,15 @@ select.nl <- function(){
   sample(size=1,sapply(list(nl1.params,nl2.params,nl3.params),unpack.params),prob = as)[[1]]
 }
 
-moments <- function(xs){
+moments <- function(xs,ws=replicate(length(xs),1/length(xs))){
+#  print(ws)
+  if(!sum(ws))
+    ws=replicate(length(xs),1/length(xs))
   "Compute raw moments of sample xs"
-  sapply(seq(1,5),function(i)(mean(xs^i)))
+#  print(paste("sum weights: ",sum(ws)))
+  ms <- sapply(seq(1,5),function(i)(sum(ws*xs^i)/sum(ws)))
+#  print(paste("moments: ",ms))
+  ms
 }
 
 cumulants <- function(ms){
@@ -123,6 +129,8 @@ cumulants <- function(ms){
   c(k1,k2,k3,k4,k5)
 }
 
+cumulants.from.sample <- function(xs) cumulants(moments(xs))
+
 eq1 <- function(a,b,k3){
   "See eq. 3.12 of Wu 2005"
   k3 - 2 * (a^-3 - b^-3)
@@ -134,28 +142,29 @@ eq2 <- function(a,b,k4){
 }
 
 
-grad.descent <- function(a,b,k1,k2,k3,k4,epsilon=.00001,delta=.00001){
+grad.descent <- function(a,b,k1,k2,k3,k4,epsilon=.0001,delta=.0001,limit=Inf){
   "Perform a primitive psuedo-gradient descent optimization to solve the system eq1, eq2 for a and b, given k3,k4"
-  print("entering")
+  print(c("entering grad descent w/ ",a,b,k1,k2,k3,k4))
   err <- function(a,b){eq1(a,b,k3)^2 + eq2(a,b,k4)^2}
   gen <- 0
-  while(err(a,b) > epsilon) {
+  while(err(a,b) > epsilon && gen < limit) {
     deltas <- lapply(list(c(1,1),c(1,-1),c(-1,1),c(-1,-1)),
                      function(x) x * delta + c(a,b))
     winner <- deltas[which.min(lapply(deltas,
                                       function(pair)err(pair[1],pair[2])))][[1]]
     a <- winner[1]
     b <- winner[2]
-    if(gen %% 1000 == 0){
-        mu <- k1 - 1/a + 1/b
-        sigma.squared <- k2 - (1/a^2 + 1/b^2)
-      print(paste(mu,sigma.squared,a,b,err(a,b)))}
+    if(gen %% 10000 == 0){
+#        mu <- k1 - 1/a + 1/b
+#        sigma.squared <- k2 - (1/a^2 + 1/b^2)
+#      print(paste(mu,sigma.squared,a,b,err(a,b)))}
+        print(paste(a,b,err(a,b)))}
     gen <- gen + 1
   }
   c(a,b)
 }
 
-mme.estimate.nl <- function(xs,epsilon=.00001,delta=.00001){
+mme.estimate.nl <- function(xs,epsilon=.00001,delta=.001){
   "Given a sample xs from an NL distribution, estimate its parameters via method of moments, described in section 3.1 of Wu 2005"
   ms <- moments(xs)
   ks <- cumulants(ms)
@@ -202,17 +211,21 @@ em <- function(ys,num.comps=2){
 #  alphas <- c(3,3)
                                           betas <- rexp(num.comps)
  # betas <- c(4,4)
-                                         mus <- replicate(num.comps,mean(ys)) + rnorm(2)
+                                         mus <- replicate(num.comps,mean(ys))
 #  mus <- c(0,5)
-                                         sigmas <- replicate(num.comps,sqrt(var(ys))) + rnorm(2)
+                                         sigmas <- replicate(num.comps,sqrt(var(ys)))
 #  sigmas <- c(1,1)
   logl <- logl.old <- -Inf
-  taus <- (replicate(n,prob.vector(num.comps))) #randomize intial responsibilities
+  nc <- ifelse(num.comps==1,2,num.comps)
+  taus <- (replicate(n,prob.vector(nc))) #randomize intial responsibilities
   pis <- prob.vector(num.comps)
-  print(pis)
-  qs <- ps <- denoms <- ws <- wvs <- w.2s <- zs <- zs.2 <- mat.or.vec(num.comps,n)
+  print(paste("pis:", pis))
+  qs <- ps <- denoms <- ws <- wvs <- w.2s <- zs <- zs.2 <- mat.or.vec(nc,n)
   do <- TRUE
-  while (do || (logl > logl.old)) {
+  i <- 0
+  while (do || (logl > logl.old) | i < 5) {
+    print(paste("em generation ",i))
+    i <- i + 1
     do <- FALSE
                                         #E step    
     for(i in 1:num.comps){
@@ -234,15 +247,26 @@ em <- function(ys,num.comps=2){
     })
     f <- function(x) sum(sapply(1:num.comps,function(i) fs[[i]](x)))
     for(i in 1:num.comps){
+      print(paste("about to assign taus with parameters: ",mus[i],
+            sigmas[i],alphas[i],betas[i]))
       taus[i,] <- sapply(ys,function(y)fs[[i]](y)/f(y))
       pis[i] <- sum(taus[i,])/n
-      mus[i] <- mean(zs[i,])
-      sigmas[i] <- sqrt(mean(zs.2[i,]) - mean(zs[i,])^2)
+      weighted.ks <- cumulants(moments(ys,taus[i,]))
+      weighted.mean <- weighted.ks[1]
+      mus[i] <- weighted.mean - 1/alphas[i] + 1/betas[i]#solving for (17)#mean(zs[i,])
+      sigmas[i] <- sqrt(abs((sum(taus[i,]*(ys-weighted.mean)^2)/sum(taus[i,])
+                    - 1/alphas[i]^2
+                    - 1/betas[i]^2)))
+                                        #sqrt(mean(zs.2[i,]) - mean(zs[i,])^2)
 #      sigmas[i] <- sqrt(mean((zs[i,] - mean(zs[i,]))^2))
-      A <- mean(wvs[i,])
-      B <- A - mean(ws[i,])
-      alphas[i] <- 1/(A + sqrt(A*B))
-      betas[i] <- 1/(B + sqrt(A*B))
+      ab <- grad.descent(alphas[i],betas[i],weighted.ks[1],weighted.ks[2],
+                         weighted.ks[3],weighted.ks[4])
+      alphas[i] <- ab[1]
+      betas[i] <- ab[2]      
+      ## A <- mean(wvs[i,])
+      ## B <- A - mean(ws[i,])
+      ## alphas[i] <- 1/(A + sqrt(A*B))
+      ## betas[i] <- 1/(B + sqrt(A*B))
     }    
     logl.old <- logl
     logl <- log.l.mixture(ys,mus,sigmas^2,alphas,betas,pis)
@@ -250,4 +274,15 @@ em <- function(ys,num.comps=2){
     print(logl)
   }
   c(mus,sigmas^2,alphas,betas,pis)
+}
+
+xs <- replicate(1000000,rnormlap(0,2,3,4))
+ks <- cumulants(moments(xs))
+k3 <- ks[3]; k4 <- ks[4]
+f1 <- function(a,b)   k3 - 2 * (a^-3 - b^-3)
+f2 <- function(a,b)     k4 - 6 * (a^-4 + b^-4)
+f <- function(p){
+  a <- p[1]
+  b <- p[2]
+  f1(a,b)^2 + f2(a,b)^2
 }
