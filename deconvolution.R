@@ -276,7 +276,7 @@ em <- function(ys,num.comps=2){
   c(mus,sigmas^2,alphas,betas,pis)
 }
 
-xs <- replicate(1000000,rnormlap(0,2,3,4))
+xs <- replicate(10000,rnormlap(0,2,3,4))
 ks <- cumulants(moments(xs))
 k3 <- ks[3]; k4 <- ks[4]
 f1 <- function(a,b)   k3 - 2 * (a^-3 - b^-3)
@@ -285,4 +285,21 @@ f <- function(p){
   a <- p[1]
   b <- p[2]
   f1(a,b)^2 + f2(a,b)^2
+}
+
+g <- function(n){
+  xs <- replicate(n,rnormlap(0,2,10,10))
+  ks <- cumulants(moments(xs))
+  nlm(f,ks[3:4])$estimate
+}
+
+recover.params <- function(xs,guess=c(0,1,1,1)){
+  f <- function(params){
+    mu <- params[1]
+    sigma.squared <- params[2]
+    alpha <- params[3]
+    beta <- params[4]
+    -log.l(xs,mu,sigma.squared,alpha,beta)
+  }
+  nlm(f,guess)
 }
