@@ -85,7 +85,7 @@ nn}
 dnormlap.prime <- function(y,mu,sigma.squared,alpha,beta) foo(y,mu,sigma.squared,alpha,beta)*(bar(y,mu,sigma.squared,alpha,beta) + baz(y,mu,sigma.squared,alpha,beta))
 
 m <- 3
-as <- prob.vector(3)
+#as <- prob.vector(3)
 nl1.params <- runif(4)
 nl2.params <- runif(4)
 nl3.params <- runif(4)
@@ -302,4 +302,21 @@ recover.params <- function(xs,guess=c(0,1,1,1)){
     -log.l(xs,mu,sigma.squared,alpha,beta)
   }
   nlm(f,guess)
+}
+
+wilcox.solver <- function(xs,guess=c(0,1,1,1),num.tests=100){
+  n <- length(xs)
+  ns <- rnorm(n*num.tests)
+  as <- rexp(n*num.tests)
+  bs <- rexp(n*num.tests)
+  dim(ns) <- dim(as) <- dim(bs) <- c(num.tests,n)
+  f <- function(params){
+    print("calling f")
+    mu <- params[1]
+    sigma.squared <- params[2]
+    alpha <- params[3]
+    beta <- params[4]
+    sum(sapply(1:num.tests,function(i) 1-wilcox.test(xs,mu+sqrt(sigma.squared)*ns[i,] + alpha*as[i,]-beta*bs[i,])$p.value))
+  }
+  nlm(f,guess)$estimate
 }
