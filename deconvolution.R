@@ -275,9 +275,9 @@ em <- function(ys,num.comps=2){
   c(mus,sigmas^2,alphas,betas,pis)
 }
 
-<<<<<<< HEAD
+
 xs <- replicate(10000,rnormlap(0,2,3,4))
-=======
+
 em2 <- function(ys,num.comps=2){
   "Do E-M for parameter estimation of ys~NL(nu,tau,alpha,beta). Cf. Reed 2004, section 4.3"
   n <- length(ys)
