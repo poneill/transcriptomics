@@ -206,9 +206,9 @@ em <- function(ys,num.comps=2){
   n <- length(ys)
   ws <- rexp(n)
   zs <- rnorm(n)
-                                          alphas <- rexp(num.comps)
+                                          alphas <- rexp(num.comps) + 1
 #  alphas <- c(3,3)
-                                          betas <- rexp(num.comps)
+                                          betas <- rexp(num.comps) + 1
  # betas <- c(4,4)
                                          mus <- replicate(num.comps,mean(ys))
   print(mus)
@@ -260,8 +260,9 @@ em <- function(ys,num.comps=2){
                     - 1/betas[i]^2)))
                                         #sqrt(mean(zs.2[i,]) - mean(zs[i,])^2)
 #      sigmas[i] <- sqrt(mean((zs[i,] - mean(zs[i,]))^2))
-      ab <- grad.descent(alphas[i],betas[i],weighted.ks[1],weighted.ks[2],
-                         weighted.ks[3],weighted.ks[4])
+      ## ab <- grad.descent(alphas[i],betas[i],weighted.ks[1],weighted.ks[2],
+      ##                    weighted.ks[3],weighted.ks[4])
+      ab <- recover.ab.prime(weighted.ks[3],weighted.ks[4],alphas[i],betas[i])
       alphas[i] <- ab[1]
       betas[i] <- ab[2]      
       ## A <- mean(wvs[i,])
@@ -532,7 +533,16 @@ wilcox.solver <- function(ys,params=c(0,1,1,1)){
    sigma.2 <- sqrt(params[2])
    alpha <- params[3]
    beta <- params[4]
-   1 - wilcox.test(xs,mu+sqrt(sigma.2)*ns+as/alpha-bs/beta)$p.value
+#   1 - wilcox.test(xs,mu+sqrt(sigma.2)*ns+as/alpha-bs/beta)$p.value
+   ks.test(xs,mu+sqrt(sigma.2)*ns+as/alpha-bs/beta)$statistic
  }
   nlm(f.wilcox,params)
+}
+
+test <- function(xs,ys){
+  sum(sapply(xs,function(x)sum((ys-x)^2)))
+}
+
+test2 <- function(xs,ys){
+  sum(sapply(1:length(xs),function(i)(xs[i]-ys[i])^2))
 }
