@@ -62,8 +62,7 @@ log.l.mixture <- function(xs,mus,sigmas.squared,alphas,betas,pis){
                                                          sigmas.squared[i],
                                                          alphas[i],
                                                          betas[i]))))
-  print(f(xs))
-  ## print(sum(log(f(xs))))
+  #print(pastef(xs))
   sum(log(f(xs)))
 }
 
@@ -104,8 +103,8 @@ select.nl <- function(){
 }
 
 moments <- function(xs,ws=replicate(length(xs),1/length(xs))){
-#  print(ws)
-  if(!sum(ws))
+  weight <- sum(ws)
+  if(is.na(weight) || weight == 0)
     ws=replicate(length(xs),1/length(xs))
   "Compute raw moments of sample xs"
 #  print(paste("sum weights: ",sum(ws)))
@@ -276,7 +275,110 @@ em <- function(ys,num.comps=2){
   c(mus,sigmas^2,alphas,betas,pis)
 }
 
+<<<<<<< HEAD
 xs <- replicate(10000,rnormlap(0,2,3,4))
+=======
+em2 <- function(ys,num.comps=2){
+  "Do E-M for parameter estimation of ys~NL(nu,tau,alpha,beta). Cf. Reed 2004, section 4.3"
+  n <- length(ys)
+  ws <- rexp(n)
+  zs <- rnorm(n)
+  alphas <- rexp(num.comps)
+#  alphas <- c(3,3)
+  betas <- rexp(num.comps)
+ # betas <- c(4,4)
+  mus <- replicate(num.comps,mean(ys)) + rnorm(num.comps)
+#  mus <- c(0,5)
+  sigmas <- replicate(num.comps,sqrt(var(ys))) + rexp(num.comps)
+#  sigmas <- c(1,1)
+  logl <- logl.old <- -Inf
+  nc <- ifelse(num.comps==1,2,num.comps)
+  taus <- (replicate(n,prob.vector(nc))) #randomize intial responsibilities
+  pis <- prob.vector(num.comps)
+  print(paste("pis:", pis))
+  do <- TRUE
+  gen <- 0
+  plot(density(ys))
+  while (do || (logl > logl.old) | gen < 5) {
+    print(paste("em generation ",gen))
+    do <- FALSE
+                                        #E step
+    fs <- sapply(1:num.comps,function(i){
+      function(x)pis[i] * dnormlap(x,mus[i],sigmas[i]^2,alphas[i],betas[i])
+    })
+    f <- function(x) sum(sapply(1:num.comps,function(i) fs[[i]](x)))
+    for(i in 1:num.comps){
+      curve(fs[[i]](x),add=TRUE,type='line',col=ifelse(i%%2,'red','blue'))
+      print(paste("about to assign taus for component", i, "with parameters: ",mus[i],
+            sigmas[i],alphas[i],betas[i]))
+      taus[i,] <- sapply(ys,function(y)fs[[i]](y)/f(y))
+      pis[i] <- sum(taus[i,])/n
+    }
+   
+                                        #M step
+      for(i in 1:num.comps){
+        print("eming")
+        ys.adjusted <- ys*n*taus[i,]/sum(taus[i,])
+        ms <- moments(ys,taus[i,])
+        expectation <- ms[1]
+        variance <- ms[2] - ms[1] ^2
+        if(gen %% 2 == 0){ #then use alpha, beta to estimate mu, sigma
+        print(paste("updating mu,sigma for component ",i,"because gen: ",gen))
+          mus[i] <- expectation - 1/alphas[1] + 1/betas[1]
+          sigmas[i] <- sqrt(abs(variance - (1/alphas[1]^2 + 1/betas[1]^2)))
+       }
+        else{#use mu, sigma to estimate alpha, beta
+          print(paste("updating alpha,beta for component",i,"because gen: ",gen))
+          print(paste("using values mu: ",mus[i],"sigma",sigmas[i],"expectation",expectation,"variance",variance))
+          ab <- recover.ab(mu[i],sigma[i],expectation,variance)
+          alphas[i] <- ab[1]
+          betas[i] <- ab[2]
+          print(paste("updated alpha, beta to :",alphas[i],betas[i]))
+        }
+    }
+    
+    logl.old <- logl
+    logl <- log.l.mixture(ys,mus,sigmas^2,alphas,betas,pis)
+    print(paste("pis:",pis))
+    print(paste("logl: ", logl))
+    gen <- gen + 1
+  }
+  c(mus,sigmas^2,alphas,betas,pis)
+}
+
+recover.ab <- function(mu,sigma,expectation,variance,old.alpha=1,old.beta=1){
+  err1 <- function(mu,expectation,a,b){
+    mu - (expectation - 1/a + 1/b)
+  }
+  err2 <- function(sigma,variance,a,b){
+   sigma^2  - (variance - (1/a^2 + 1/b^2))
+  }
+  err.total <- function(ab){
+    a <- ab[1]
+    b <- ab[2]
+    err1(mu,expectation,a,b)^2 + err2(sigma,variance,a,b)^2
+  }
+  nlm(err.total,c(old.alpha,old.beta))$estimate
+}
+
+recover.ab.prime <- function(k3,k4,old.alpha=1,old.beta=1){
+  err1 <- function(mu,expectation,a,b){
+    k3 - 2*(1/a^3 - 1/b^3)
+  }
+  err2 <- function(mu,expectation,a,b){
+    k4 - 6*(1/a^4 + 1/b^4)
+  }
+
+  err.total <- function(ab){
+    a <- ab[1]
+    b <- ab[2]
+    err1(mu,expectation,a,b)^2 + err2(sigma,variance,a,b)^2
+  }
+  nlm(err.total,c(old.alpha,old.beta))$estimate
+}
+
+#xs <- replicate(1000000,rnormlap(0,2,3,4))
+
 ks <- cumulants(moments(xs))
 k3 <- ks[3]; k4 <- ks[4]
 f1 <- function(a,b)   k3 - 2 * (a^-3 - b^-3)
@@ -286,6 +388,7 @@ f <- function(p){
   b <- p[2]
   f1(a,b)^2 + f2(a,b)^2
 }
+
 
 g <- function(n){
   xs <- replicate(n,rnormlap(0,2,10,10))
@@ -319,4 +422,92 @@ wilcox.solver <- function(xs,guess=c(0,1,1,1),num.tests=100){
     sum(sapply(1:num.tests,function(i) 1-wilcox.test(xs,mu+sqrt(sigma.squared)*ns[i,] + alpha*as[i,]-beta*bs[i,])$p.value))
   }
   nlm(f,guess)$estimate
+
+dwl <- function(x,mu,a,b){
+  ifelse(x >= mu,(a*b/(a + b))*exp(a*(mu-x)),(a*b/(a + b))*exp(b*(x-mu)))
+  
+}
+
+em3 <- function(ys,num.comps=2){
+  "Do E-M for parameter estimation of ys~NL(nu,tau,alpha,beta). Cf. Reed 2004, section 4.3"
+  n <- length(ys)
+  ws <- rexp(n)
+  zs <- rnorm(n)
+  alphas <- rexp(num.comps)
+#  alphas <- c(3,3)
+  betas <- rexp(num.comps)
+ # betas <- c(4,4)
+  mus <- replicate(num.comps,mean(ys)) + rnorm(num.comps)
+#  mus <- c(0,5)
+  sigmas <- replicate(num.comps,sqrt(var(ys))) + rexp(num.comps)
+#  sigmas <- c(1,1)
+  logl <- logl.old <- -Inf
+  nc <- ifelse(num.comps==1,2,num.comps)
+  taus <- (replicate(n,prob.vector(nc))) #randomize intial responsibilities
+  pis <- prob.vector(num.comps)
+  print(paste("pis:", pis))
+  do <- TRUE
+  gen <- 0
+  plot(density(ys))
+  while (do || (logl > logl.old) | gen < 10) {
+    print(paste("em generation ",gen))
+    do <- FALSE
+                                        #E step
+    fs <- sapply(1:num.comps,function(i){
+      function(x)pis[i] * dnormlap(x,mus[i],sigmas[i]^2,alphas[i],betas[i])
+    })
+    f <- function(x) sum(sapply(1:num.comps,function(i) fs[[i]](x)))
+    for(i in 1:num.comps){
+      print(paste("plotting component: ",i))
+      curve(fs[[i]](x),add=TRUE,type='line',col=ifelse(i%%2,'red','blue'))
+      print(paste("about to assign taus for component", i, "with parameters: ",mus[i],
+            sigmas[i],alphas[i],betas[i]))
+      taus[i,] <- sapply(ys,function(y)fs[[i]](y)/f(y))
+      pis[i] <- sum(taus[i,])/n
+    }
+   
+                                        #M step
+      for(i in 1:num.comps){
+        print("eming")
+        ys.adjusted <- ys*n*taus[i,]/sum(taus[i,])
+        ms <- moments(ys,taus[i,])
+        expectation <- ms[1]
+        variance <- ms[2] - ms[1] ^2
+
+        if(gen %% 3 == 0){ 
+        print(paste("updating mu,sigma for component ",i,"because gen: ",gen))
+        mus[i] <- expectation - 1/alphas[1] + 1/betas[1]
+        sigmas[i] <- sqrt(abs(variance - (1/alphas[1]^2 + 1/betas[1]^2)))
+        }
+
+        if(gen %% 3 > 1){ 
+        print(paste("updating alpha,beta for component ",i,"because gen: ",gen))
+        ab <- recover.ab(mus[i],sigmas[i],expectation,variance)
+        if (gen %% 3 == 2)
+          alphas[i] <- ab[1]
+        else
+          betas[i] <- ab[2]
+        }
+
+        
+        ## if(gen %% 4 == 2){ 
+        ##   print(paste("updating alpha for component ",i,"because gen: ",gen))
+
+        ## }
+
+        ##         if(gen %% 4 == 3){ 
+        ## print(paste("updating beta for component ",i,"because gen: ",gen))
+
+        ## }
+
+    }
+    
+    logl.old <- logl
+    logl <- log.l.mixture(ys,mus,sigmas^2,alphas,betas,pis)
+    print(paste("pis:",pis))
+    print(paste("logl: ", logl))
+    gen <- gen + 1
+  }
+  c(mus,sigmas^2,alphas,betas,pis)
+
 }
