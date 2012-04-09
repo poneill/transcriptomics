@@ -211,6 +211,7 @@ em <- function(ys,num.comps=2){
                                           betas <- rexp(num.comps)
  # betas <- c(4,4)
                                          mus <- replicate(num.comps,mean(ys))
+  print(mus)
 #  mus <- c(0,5)
                                          sigmas <- replicate(num.comps,sqrt(var(ys)))
 #  sigmas <- c(1,1)
@@ -221,10 +222,10 @@ em <- function(ys,num.comps=2){
   print(paste("pis:", pis))
   qs <- ps <- denoms <- ws <- wvs <- w.2s <- zs <- zs.2 <- mat.or.vec(nc,n)
   do <- TRUE
-  i <- 0
-  while (do || (logl > logl.old) | i < 5) {
-    print(paste("em generation ",i))
-    i <- i + 1
+  gen <- 0
+  while (do || (logl > logl.old) | gen < 5) {
+    print(paste("em generation ",gen))
+    gen <- gen + 1
     do <- FALSE
                                         #E step    
     for(i in 1:num.comps){
@@ -246,6 +247,7 @@ em <- function(ys,num.comps=2){
     })
     f <- function(x) sum(sapply(1:num.comps,function(i) fs[[i]](x)))
     for(i in 1:num.comps){
+      print(mus)
       print(paste("about to assign taus with parameters: ",mus[i],
             sigmas[i],alphas[i],betas[i]))
       taus[i,] <- sapply(ys,function(y)fs[[i]](y)/f(y))
@@ -327,7 +329,7 @@ em2 <- function(ys,num.comps=2){
         else{#use mu, sigma to estimate alpha, beta
           print(paste("updating alpha,beta for component",i,"because gen: ",gen))
           print(paste("using values mu: ",mus[i],"sigma",sigmas[i],"expectation",expectation,"variance",variance))
-          ab <- recover.ab(mu[i],sigma[i],expectation,variance)
+          ab <- recover.ab(mus[i],sigmas[i],expectation,variance)
           alphas[i] <- ab[1]
           betas[i] <- ab[2]
           print(paste("updated alpha, beta to :",alphas[i],betas[i]))
@@ -344,10 +346,12 @@ em2 <- function(ys,num.comps=2){
 }
 
 recover.ab <- function(mu,sigma,expectation,variance,old.alpha=1,old.beta=1){
+  print(paste("entering recover.ab: ",mu,sigma,expectation,variance))
   err1 <- function(mu,expectation,a,b){
     mu - (expectation - 1/a + 1/b)
   }
   err2 <- function(sigma,variance,a,b){
+    print(paste("sigma: ",sigma))
    sigma^2  - (variance - (1/a^2 + 1/b^2))
   }
   err.total <- function(ab){
@@ -359,24 +363,25 @@ recover.ab <- function(mu,sigma,expectation,variance,old.alpha=1,old.beta=1){
 }
 
 recover.ab.prime <- function(k3,k4,old.alpha=1,old.beta=1){
-  err1 <- function(mu,expectation,a,b){
+  err1 <- function(a,b){
     k3 - 2*(1/a^3 - 1/b^3)
   }
-  err2 <- function(mu,expectation,a,b){
+  err2 <- function(a,b){
     k4 - 6*(1/a^4 + 1/b^4)
   }
 
   err.total <- function(ab){
     a <- ab[1]
     b <- ab[2]
-    err1(mu,expectation,a,b)^2 + err2(sigma,variance,a,b)^2
+    err1(a,b)^2 + err2(a,b)^2
   }
   nlm(err.total,c(old.alpha,old.beta))$estimate
 }
 
 #xs <- replicate(1000000,rnormlap(0,2,3,4))
-ks <- cumulants(moments(xs))
-k3 <- ks[3]; k4 <- ks[4]
+#ks <- cumulants(moments(xs))
+#k3 <- ks[3]; k4 <- ks[4]
+
 f1 <- function(a,b)   k3 - 2 * (a^-3 - b^-3)
 f2 <- function(a,b)     k4 - 6 * (a^-4 + b^-4)
 f <- function(p){
@@ -471,4 +476,63 @@ em3 <- function(ys,num.comps=2){
     gen <- gen + 1
   }
   c(mus,sigmas^2,alphas,betas,pis)
+}
+
+recover.params <- function(xs,params=c(0,1,1,1)){
+  ll <- function(params){
+  mu <- params[1]
+  sigma.2 <- params[2]
+  alpha <- params[3]
+  beta <- params[4]
+  -log.l(xs,mu,sigma.squared,alpha,beta) #to be minimized
+}
+  nlm(ll,params)
+}
+
+concentrated.likelihood <- function(abt,ys){
+  "Eq 31. Reed 2004"
+  a <- abt[1]
+  b <- abt[2]
+  t <- abt[3]
+  y.bar <- mean(ys)
+  n <- length(ys)
+  (n * (log(a) + log(b) - log(a + b)) +
+   sum(sapply(1:n,function(i)dnorm((ys[i]-y.bar + 1/a - 1/b)/t))) +
+   sum(sapply(1:n,function(i)log(R(a*t - (ys[i]-y.bar + 1/a - 1/b)/t) +
+                                  R(b*t - (ys[i]-y.bar + 1/a - 1/b)/t)))))
+}
+
+mle.params <- function(ys,mme.guess=c(0,1,1,1)){
+  ks <- cumulants(moments(ys))
+  print(ks)
+  ab.mme <- recover.ab.prime(ks[3],ks[4])
+  print(ab.mme)
+  #approximate starting values for numeric MLE with MME
+  mme.guess <- c(ab.mme,1)
+  l.hat <- function(abt){
+    -concentrated.likelihood(abt,ys)
+  }
+  # do MLE
+  abt <- nlm(l.hat,mme.guess)
+  print(abt)
+  a <- abt[1]
+  b <- abt[2]
+  t <- abt[3]
+  n <- mean(ys) - 1/a + 1/b
+  c(n,t,a,b)
+}
+  
+wilcox.solver <- function(ys,params=c(0,1,1,1)){
+  n <- length(ys)
+  ns <- rnorm(n)
+  as <- rexp(n)
+  bs <- rexp(n)
+  f.wilcox <- function(params){
+   mu <- params[1]
+   sigma.2 <- sqrt(params[2])
+   alpha <- params[3]
+   beta <- params[4]
+   1 - wilcox.test(xs,mu+sqrt(sigma.2)*ns+as/alpha-bs/beta)$p.value
+ }
+  nlm(f.wilcox,params)
 }
