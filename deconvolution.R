@@ -379,6 +379,22 @@ recover.ab.prime <- function(k3,k4,old.alpha=1,old.beta=1){
   nlm(err.total,c(old.alpha,old.beta))$estimate
 }
 
+recover.ab.sanity <- function(k3,k4,old.alpha=1,old.beta=1){
+  err1 <- function(a,b){
+    k3 - 2*(1/a^3 - 1/b^3)
+  }
+  err2 <- function(a,b){
+    k4 - 6*(1/a^4 + 1/b^4)
+  }
+  
+  err.total <- function(ab){
+    a <- ab[1]
+    b <- ab[2]
+    (err1(a,b)^2 + err2(a,b)^2)
+  }
+  nlm(err.total,c(old.alpha,old.beta))$estimate
+}
+
 
 g <- function(n){
   xs <- replicate(n,rnormlap(0,2,10,10))
@@ -600,4 +616,18 @@ recover.ab.dprime <- function(k3,k4,a.guess=1,b.guess=1,delta=0.01,epsilon=0.01)
     err.cur <- err.total(c(a,b))
     print(paste(a,b,grad[1],grad[2],err.cur))
   }
+}
+
+test.ab.recovery <- function(sample.size,num.tests,mu=0,sigma=1,alpha=2,beta=3){
+  logs <- sanities <- mat.or.vec(num.tests,2)
+  xss <- mat.or.vec(num.tests,sample.size)
+  for(i in 1:num.tests){
+    print(i)
+    xs <- u(sample.size,mu,sigma,alpha,beta)
+    ks <- cumulants(moments(xs))
+    logs[i,] <- recover.ab.prime(ks[3],ks[4])
+    sanities[i,] <- recover.ab.sanity(ks[3],ks[4])
+    xss[i,] <- xs
+  }
+  list(logs,sanities,xss)
 }
