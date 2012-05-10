@@ -38,7 +38,8 @@ cumulant <- function(a,b,r){
   factorial(r-1)*(1/(a^r) + (-1)^r * 1/(b^r))
 }
 
-R <- function(z)(1-pnorm(z))/dnorm(z)
+
+R <- function(z)ifelse(z < 5,(1-pnorm(z))/dnorm(z),cf2(z))
 
 dnormlap <- function(y,mu,sigma.squared,alpha,beta){
   "density function for normal-laplace"
@@ -49,7 +50,8 @@ dnormlap <- function(y,mu,sigma.squared,alpha,beta){
 }
 
 log.l <- function(xs,mu,sigma.squared,alpha,beta){
-  sum(log(dnormlap(xs,mu,sigma.squared,alpha,beta)))
+  lls <- log(dnormlap(xs,mu,sigma.squared,alpha,beta))
+  sum(lls)
 }
 
 log.l.mixture <- function(xs,mus,sigmas.squared,alphas,betas,pis){
@@ -58,12 +60,14 @@ log.l.mixture <- function(xs,mus,sigmas.squared,alphas,betas,pis){
   print(paste("alphas:",alphas))
   print(paste("betas:",betas))
   print(paste("pis:",pis))
-  f <- function(x) sum(sapply(1:length(pis),function(i) (pis[i] * dnormlap(x,mus[i],
-                                                                           sigmas.squared[i],
-                                                                           alphas[i],
-                                                                           betas[i]))))
+  f <- function(x) sum((sapply(1:length(pis),
+                               function(i) (pis[i] * dnormlap(x,mus[i],
+                                                              sigmas.squared[i],
+                                                              alphas[i],
+                                                              betas[i])))))
                                         #print(pastef(xs))
-  sum(log(f(xs)))
+  likelihoods <- sapply(xs,f)
+  sum(log(likelihoods))
 }
 
 foo <- function(y,mu,sigma.squared,alpha,beta){
@@ -79,9 +83,11 @@ bar <- function(y,mu,sigma.squared,alpha,beta){
 baz <- function(y,mu,sigma.squared,alpha,beta){
   sigma <- sqrt(sigma.squared)
   R(beta*sigma+(y-mu)/sigma)
-  nn}
+  }
 
-dnormlap.prime <- function(y,mu,sigma.squared,alpha,beta) foo(y,mu,sigma.squared,alpha,beta)*(bar(y,mu,sigma.squared,alpha,beta) + baz(y,mu,sigma.squared,alpha,beta))
+dnormlap.prime <- function(y,mu,sigma.squared,alpha,beta)
+foo(y,mu,sigma.squared,alpha,beta)*(bar(y,mu,sigma.squared,alpha,beta)
++ baz(y,mu,sigma.squared,alpha,beta))
 
 m <- 3
                                         #as <- prob.vector(3)
@@ -171,7 +177,8 @@ mme.estimate.nl <- function(xs,epsilon=.00001,delta=.001){
   k2 <- ks[2]
   k3 <- ks[3]
   k4 <- ks[4]
-  ab <- grad.descent(1,1,k1,k2,k3,k4,epsilon,delta)
+#  ab <- grad.descent(1,1,k1,k2,k3,k4,epsilon,delta)
+  ab <- recover.ab.prime(k3,k4)
   a <- ab[1]
   b <- ab[2]  
   mu <- k1 - 1/a + 1/b
@@ -201,20 +208,21 @@ evaluate.grouping <- function(xs,params.list,js){
                                           params.list[[i]][4]))))
 }
 
-em <- function(ys,num.comps=2){
+em <- function(ys,num.comps=2,guided=FALSE){
   "Do E-M for parameter estimation of ys~NL(nu,tau,alpha,beta). Cf. Reed 2004, section 4.3"
   n <- length(ys)
   ws <- rexp(n)
   zs <- rnorm(n)
   alphas <- rexp(num.comps) + 1
-                                        #  alphas <- c(3,3)
+#                                          alphas <- c(2,2)
   betas <- rexp(num.comps) + 1
-                                        # betas <- c(4,4)
-  mus <- replicate(num.comps,mean(ys))
+#                                         betas <- c(3,3)
+ mus <- replicate(num.comps,mean(ys)) + rnorm(num.comps)
+ mus <- c(0,10)
   print(mus)
-                                        #  mus <- c(0,5)
-  sigmas <- replicate(num.comps,sqrt(var(ys)))
-                                        #  sigmas <- c(1,1)
+
+  sigmas <- replicate(num.comps,sqrt(var(ys))) + rnorm(num.comps)
+#                                          sigmas <- c(1,1)
   logl <- logl.old <- -Inf
   nc <- ifelse(num.comps==1,2,num.comps)
   taus <- (replicate(n,prob.vector(nc))) #randomize intial responsibilities
@@ -223,6 +231,14 @@ em <- function(ys,num.comps=2){
   qs <- ps <- denoms <- ws <- wvs <- w.2s <- zs <- zs.2 <- mat.or.vec(nc,n)
   do <- TRUE
   gen <- 0
+  print("plotting")
+  plot(density(ys))
+  fs <- function(i,x){pis[i] * dnormlap(x,mus[i],sigmas[i]^2,alphas[i],betas[i])}
+  
+  for(i in 1:num.comps){
+    print(paste("initial plotting for comp",i))
+    curve(fs(i,x),add=TRUE,type='line',col=ifelse(i%%2,'red','blue'))
+  }
   while (do || (logl > logl.old) | gen < 5) {
     print(paste("em generation ",gen))
     gen <- gen + 1
@@ -242,15 +258,18 @@ em <- function(ys,num.comps=2){
       zs.2[i,] <- ys.adjusted^2 - 2 * ys.adjusted * ws[i,] + w.2s[i,]
     }
                                         #M step
-    fs <- sapply(1:num.comps,function(i){
-      function(x)pis[i] * dnormlap(x,mus[i],sigmas[i]^2,alphas[i],betas[i])
-    })
-    f <- function(x) sum(sapply(1:num.comps,function(i) fs[[i]](x)))
+    fs <- function(i,x){pis[i] * dnormlap(x,mus[i],sigmas[i]^2,alphas[i],betas[i])}
+    f <- function(x) sum(sapply(1:num.comps,function(i) fs(i,x)))
     for(i in 1:num.comps){
       print(mus)
+      print(paste("plotting component ",i))
+      curve(fs(i,x),add=TRUE,type='line',col=ifelse(i%%2,'red','blue'))
       print(paste("about to assign taus with parameters: ",mus[i],
                   sigmas[i],alphas[i],betas[i]))
-      taus[i,] <- sapply(ys,function(y)fs[[i]](y)/f(y))
+      taus[i,] <- sapply(ys,function(y)fs(i,y)/f(y))
+      if(any(is.nan(taus[i,]))){
+        stop(paste("NaN taus:","mus: ",mus[i],"sigmas: ",sigmas[i]^2,"alphas: ",alphas[i],"betas: ",betas[i]))
+      }
       pis[i] <- sum(taus[i,])/n
       weighted.ks <- cumulants(moments(ys,taus[i,]))
       weighted.mean <- weighted.ks[1]
@@ -258,13 +277,20 @@ em <- function(ys,num.comps=2){
       sigmas[i] <- sqrt(abs((sum(taus[i,]*(ys-weighted.mean)^2)/sum(taus[i,])
                              - 1/alphas[i]^2
                              - 1/betas[i]^2)))
+      if(is.nan(sigmas[i])){
+        stop(paste("taus: ",taus[i,],"weighted.mean ",weighted.mean,"alpha:",alphas[i],"beta: ",betas[i]))
+      }
                                         #sqrt(mean(zs.2[i,]) - mean(zs[i,])^2)
                                         #      sigmas[i] <- sqrt(mean((zs[i,] - mean(zs[i,]))^2))
-      ## ab <- grad.descent(alphas[i],betas[i],weighted.ks[1],weighted.ks[2],
-      ##                    weighted.ks[3],weighted.ks[4])
-      ab <- recover.ab.prime(weighted.ks[3],weighted.ks[4],alphas[i],betas[i])
+      initial.alpha <- ifelse(guided, alphas[i],1)
+      initial.beta <- ifelse(guided, betas[i],1)
+      ab <- recover.ab.prime(weighted.ks[3],
+                             weighted.ks[4],
+                             initial.alpha,
+                             initial.beta)
       alphas[i] <- ab[1]
-      betas[i] <- ab[2]      
+      betas[i] <- ab[2]
+      
       ## A <- mean(wvs[i,])
       ## B <- A - mean(ws[i,])
       ## alphas[i] <- 1/(A + sqrt(A*B))
@@ -274,6 +300,9 @@ em <- function(ys,num.comps=2){
     logl <- log.l.mixture(ys,mus,sigmas^2,alphas,betas,pis)
     print(paste("pis:",pis))
     print(paste("logl:",logl))
+    if(is.nan(logl)){
+      return(c(0,0,0,0,0))
+    }
   }
   c(mus,sigmas^2,alphas,betas,pis)
 }
@@ -563,6 +592,11 @@ mle.params <- function(ys,mme.guess=c(0,1,1,1)){
   c(n,t,a,b)
 }
 
+get.ab <- function(xs) {
+  ks <- cumulants(moments(xs))
+  recover.ab.prime(ks[3],ks[4])
+}
+
 ## wilcox.solver <- function(ys,params=c(0,1,1,1)){
 ##   n <- length(ys)
 ##   ns <- rnorm(n)
@@ -619,7 +653,7 @@ recover.ab.dprime <- function(k3,k4,a.guess=1,b.guess=1,delta=0.01,epsilon=0.01)
 }
 
 test.ab.recovery <- function(sample.size,num.tests,mu=0,sigma=1,alpha=2,beta=3){
-  logs <- sanities <- mat.or.vec(num.tests,2)
+  logs <- sanities <- kss <- mat.or.vec(num.tests,2)
   xss <- mat.or.vec(num.tests,sample.size)
   for(i in 1:num.tests){
     print(i)
@@ -627,7 +661,115 @@ test.ab.recovery <- function(sample.size,num.tests,mu=0,sigma=1,alpha=2,beta=3){
     ks <- cumulants(moments(xs))
     logs[i,] <- recover.ab.prime(ks[3],ks[4])
     sanities[i,] <- recover.ab.sanity(ks[3],ks[4])
+    kss[i,] <- c(ks[3],ks[4])
     xss[i,] <- xs
   }
   list(logs,sanities,xss)
 }
+
+recover.ab.subsample <- function(xs,fraction,num.tests){
+  n <- floor(fraction*length(xs))
+  results <- mat.or.vec(num.tests,2)
+  for(i in 1:num.tests){
+    ys <- sample(xs,n)
+    ks <- cumulants(moments(ys))
+    results[i,] <- recover.ab.prime(ks[3],ks[4])
+  }
+  results
+}
+
+erf <- function(z,terms=10){
+  2/sqrt(pi) * sum(sapply(0:terms,
+                          function(n)(-1)^n*z^(2*n+1)/(factorial(n)*(2*n+1))))
+}
+
+erfc <- function(z,terms=10){
+#  1-erf(z,terms)
+  1-erf2(z)
+}
+
+my.pnorm <- function(z,terms=10){
+  1/2 * erfc(-z/sqrt(2),terms)
+}
+
+erf2 <- function(x) {
+                                        #from A & S, via JDC
+   # constants
+    a1 <-  0.254829592
+    a2 <- -0.284496736
+    a3 <-  1.421413741
+    a4 <- -1.453152027
+    a5 <-  1.061405429
+    p  <-  0.3275911
+
+    # Save the sign of x
+    sign <- 1
+    if (x < 0){
+        sign <- -1
+      }
+    x <- abs(x)
+
+    # A & S 7.1.26
+    t <- 1.0/(1.0 + p*x)
+    y <- 1.0 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*exp(-x*x)
+    sign*y
+  }
+
+range <- function(s,t,d){
+  1:((t-s)/d) * d + s
+}
+
+cf <- function(x,n=1,limit){
+  x + n/(x + ifelse(n==limit,0,cf(x,n+1,limit)))
+}
+
+cf2 <- function(x,limit=3){
+  1/cf(x,1,limit)
+}
+
+laplace <- function(t,n){
+1/t + sum(sapply(1:n,function(s)(-1)^s*(prod(2*1:s - 1))/t^(2*s+1)))
+}
+
+laplace.debug <- function(t,n){
+(sapply(0:n,function(s)(-1)^s*(prod(2*1:s - 1))/t^(2*s+1)))
+}
+
+mcmc <- function(xs,mus,sigmas.squared,alphas,betas,pis,scale=0.1,gens=5000){
+tolerance <- 1000
+history <- mat.or.vec(gens,1)
+cur <- (log.l.mixture(xs,mus,sigmas.squared,alphas,betas,pis)/tolerance)
+prop <- cur
+accept <- 0
+for(gen in 1:gens){
+  history[gen] <- cur
+  prop.mus <- mus + rnorm(length(mus),0,scale)
+  prop.sigmas.squared <- sigmas.squared + rnorm(length(sigmas.squared),0,scale)
+  prop.alphas <- alphas + rnorm(length(alphas),0,scale)
+  prop.betas <- betas + rnorm(length(betas),0,scale)
+  prop.pis <- normalize(pis+rnorm(length(pis),0,scale))
+  #print(prop.params)
+   prop <- (log.l.mixture(xs,prop.mus,
+                          prop.sigmas.squared,
+                          prop.alphas,
+                          prop.betas,
+                          prop.pis)/tolerance)
+   a <- 1 #runif(1)
+  print(c(cur,prop))
+  accept <- 0
+   if(a < exp((prop-cur)/(gens-gen+1))){
+     params <- prop.params
+     cur <- prop
+     accept <- 1
+   }
+
+   else{
+
+  }
+
+}
+#params
+history
+}
+
+normalize <- function(xs)xs/sum(xs)
