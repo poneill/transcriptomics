@@ -39,7 +39,7 @@ cumulant <- function(a,b,r){
 }
 
 
-R <- function(z)ifelse(z < 5,(1-pnorm(z))/dnorm(z),cf2(z))
+R <- function(z)ifelse(z < 7,(1-pnorm(z))/dnorm(z),cf2(z))
 
 dnormlap <- function(y,mu,sigma.squared,alpha,beta){
   "density function for normal-laplace"
@@ -208,21 +208,17 @@ evaluate.grouping <- function(xs,params.list,js){
                                           params.list[[i]][4]))))
 }
 
-em <- function(ys,num.comps=2,guided=FALSE){
+em <- function(ys,mus=replicate(num.comps,mean(ys)) + rnorm(num.comps),
+               sigmas.squared=replicate(num.comps,sqrt(var(ys))) + rnorm(num.comps),
+               alphas=rexp(num.comps) + 1,
+               betas=rexp(num.comps) + 1,
+               num.comps=2,
+               guided=FALSE){
   "Do E-M for parameter estimation of ys~NL(nu,tau,alpha,beta). Cf. Reed 2004, section 4.3"
+  sigmas <- sqrt(sigmas.squared)
   n <- length(ys)
   ws <- rexp(n)
   zs <- rnorm(n)
-  alphas <- rexp(num.comps) + 1
-#                                          alphas <- c(2,2)
-  betas <- rexp(num.comps) + 1
-#                                         betas <- c(3,3)
- mus <- replicate(num.comps,mean(ys)) + rnorm(num.comps)
- mus <- c(0,10)
-  print(mus)
-
-  sigmas <- replicate(num.comps,sqrt(var(ys))) + rnorm(num.comps)
-#                                          sigmas <- c(1,1)
   logl <- logl.old <- -Inf
   nc <- ifelse(num.comps==1,2,num.comps)
   taus <- (replicate(n,prob.vector(nc))) #randomize intial responsibilities
@@ -239,7 +235,7 @@ em <- function(ys,num.comps=2,guided=FALSE){
     print(paste("initial plotting for comp",i))
     curve(fs(i,x),add=TRUE,type='line',col=ifelse(i%%2,'red','blue'))
   }
-  while (do || (logl > logl.old) | gen < 5) {
+  while (do || (logl > logl.old) | gen < 20) {
     print(paste("em generation ",gen))
     gen <- gen + 1
     do <- FALSE
@@ -267,8 +263,8 @@ em <- function(ys,num.comps=2,guided=FALSE){
       print(paste("about to assign taus with parameters: ",mus[i],
                   sigmas[i],alphas[i],betas[i]))
       taus[i,] <- sapply(ys,function(y)fs(i,y)/f(y))
-      if(any(is.nan(taus[i,]))){
-        stop(paste("NaN taus:","mus: ",mus[i],"sigmas: ",sigmas[i]^2,"alphas: ",alphas[i],"betas: ",betas[i]))
+      if(any(is.nan(taus[i,])) || taus[i,] < 0){
+        stop(paste("NaN taus:","mus: ",mus,"sigmas: ",sigmas^2,"alphas: ",alphas,"betas: ",betas,"pis: ",pis))
       }
       pis[i] <- sum(taus[i,])/n
       weighted.ks <- cumulants(moments(ys,taus[i,]))
@@ -405,7 +401,11 @@ recover.ab.prime <- function(k3,k4,old.alpha=1,old.beta=1){
     b <- ab[2]
     log(err1(a,b)^2 + err2(a,b)^2)
   }
-  nlm(err.total,c(old.alpha,old.beta))$estimate
+  ab <- nlm(err.total,c(old.alpha,old.beta))$estimate
+  if(any(ab < 0))
+    print(paste("warning: ab negative; ks: ",k3,k4))
+ ab
+#  c(2,3)
 }
 
 recover.ab.sanity <- function(k3,k4,old.alpha=1,old.beta=1){
@@ -421,7 +421,8 @@ recover.ab.sanity <- function(k3,k4,old.alpha=1,old.beta=1){
     b <- ab[2]
     (err1(a,b)^2 + err2(a,b)^2)
   }
-  nlm(err.total,c(old.alpha,old.beta))$estimate
+#  nlm(err.total,c(old.alpha,old.beta))$estimate
+  c(2,3)
 }
 
 
