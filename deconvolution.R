@@ -213,8 +213,9 @@ em <- function(ys,mus=replicate(num.comps,mean(ys)) + rnorm(num.comps),
                alphas=rexp(num.comps) + 1,
                betas=rexp(num.comps) + 1,
                num.comps=2,
-               guided=FALSE){
+               guided=FALSE,maxgens=20){
   "Do E-M for parameter estimation of ys~NL(nu,tau,alpha,beta). Cf. Reed 2004, section 4.3"
+  history <- mat.or.vec(maxgens+10,1+num.comps*5)
   sigmas <- sqrt(sigmas.squared)
   n <- length(ys)
   ws <- rexp(n)
@@ -235,7 +236,7 @@ em <- function(ys,mus=replicate(num.comps,mean(ys)) + rnorm(num.comps),
     print(paste("initial plotting for comp",i))
     curve(fs(i,x),add=TRUE,type='line',col=ifelse(i%%2,'red','blue'))
   }
-  while (do || (logl > logl.old) | gen < 20) {
+  while (do || (logl > logl.old) | gen < maxgens) {
     print(paste("em generation ",gen))
     gen <- gen + 1
     do <- FALSE
@@ -277,15 +278,15 @@ em <- function(ys,mus=replicate(num.comps,mean(ys)) + rnorm(num.comps),
         stop(paste("taus: ",taus[i,],"weighted.mean ",weighted.mean,"alpha:",alphas[i],"beta: ",betas[i]))
       }
                                         #sqrt(mean(zs.2[i,]) - mean(zs[i,])^2)
-                                        #      sigmas[i] <- sqrt(mean((zs[i,] - mean(zs[i,]))^2))
+                                              #sigmas[i] <- sqrt(mean((zs[i,] - mean(zs[i,]))^2))
       initial.alpha <- ifelse(guided, alphas[i],1)
       initial.beta <- ifelse(guided, betas[i],1)
       ab <- recover.ab.prime(weighted.ks[3],
                              weighted.ks[4],
                              initial.alpha,
                              initial.beta)
-      alphas[i] <- ab[1]
-      betas[i] <- ab[2]
+      alphas[i] <- ifelse(ab[1] < 10,ab[1],alphas[i])
+      betas[i] <- ifelse(ab[2] < 10,ab[1],betas[i])
       
       ## A <- mean(wvs[i,])
       ## B <- A - mean(ws[i,])
@@ -299,8 +300,10 @@ em <- function(ys,mus=replicate(num.comps,mean(ys)) + rnorm(num.comps),
     if(is.nan(logl)){
       return(c(0,0,0,0,0))
     }
+    history[gen,] <- c(logl,mus,sigmas,alphas,betas,pis)
   }
-  c(mus,sigmas^2,alphas,betas,pis)
+#  c(mus,sigmas^2,alphas,betas,pis)
+  history[1:gen,]
 }
 
 em2 <- function(ys,num.comps=2){
@@ -399,7 +402,7 @@ recover.ab.prime <- function(k3,k4,old.alpha=1,old.beta=1){
   err.total <- function(ab){
     a <- ab[1]
     b <- ab[2]
-    log(err1(a,b)^2 + err2(a,b)^2)
+    log(err1(a,b)^2 + err2(a,b)^2) + ifelse(a < 0 || b < 0,Inf,0)
   }
   ab <- nlm(err.total,c(old.alpha,old.beta))$estimate
   if(any(ab < 0))
@@ -774,3 +777,7 @@ history
 }
 
 normalize <- function(xs)xs/sum(xs)
+
+dnormlap.mixture <- function(x,mu1,mu2,sigma.squared1,sigma.squared2,alpha1,alpha2,beta1,beta2,pi1,pi2){
+pi1*dnormlap(x,mu1,sigma.squared1,alpha1,beta1) + pi2*dnormlap(x,mu2,sigma.squared2,alpha2,beta2)
+}
